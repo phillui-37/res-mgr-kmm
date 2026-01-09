@@ -1,0 +1,118 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 1. Build the Server (Linux runner is sufficient as it's a JAR/Script dist)
+  build-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Server Distribution
+        run: ./gradlew :server:installDist
+
+      - name: Zip Server Distribution
+        run: |
+          cd server/build/install/server
+          zip -r ../../../../server-dist.zip .
+
+      - name: Upload Server Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-dist
+          path: server-dist.zip
+
+  # 2. Build Clients (Matrix for Multi-OS)
+  build-client:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant execute permission for gradlew
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+
+      # Builds .dmg on Mac, .msi on Windows, .deb on Linux (default formats)
+      - name: Build Client Distribution
+        run: ./gradlew :composeApp:packageDistributionForCurrentOS
+
+      # Find and rename artifacts for upload
+      - name: Prepare Artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $path = Get-ChildItem -Path "composeApp/build/compose/binaries/main/msi/*.msi" | Select-Object -First 1
+          echo "CLIENT_ARTIFACT_PATH=$($path.FullName)" >> $env:GITHUB_ENV
+
+      - name: Prepare Artifacts (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          FILE=$(ls composeApp/build/compose/binaries/main/dmg/*.dmg | head -n 1)
+          echo "CLIENT_ARTIFACT_PATH=$FILE" >> $GITHUB_ENV
+
+      - name: Prepare Artifacts (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          FILE=$(ls composeApp/build/compose/binaries/main/deb/*.deb | head -n 1)
+          echo "CLIENT_ARTIFACT_PATH=$FILE" >> $GITHUB_ENV
+
+      - name: Upload Client Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-${{ matrix.os }}
+          path: ${{ env.CLIENT_ARTIFACT_PATH }}
+
+  # 3. Create GitHub Release
+  create-release:
+    needs: [build-server, build-client]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/server-dist/server-dist.zip
+            artifacts/client-macos-latest/*.dmg
+            artifacts/client-windows-latest/*.msi
+            artifacts/client-ubuntu-latest/*.deb
+          draft: true
+          prerelease: false
