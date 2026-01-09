@@ -1,0 +1,163 @@
+openapi: 3.0.3
+info:
+  title: Resource Manager API
+  description: API for managing resources (books, videos, games, etc.)
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /items:
+    get:
+      summary: Search items
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Search query string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ItemDto'
+    post:
+      summary: Create a new item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemDto'
+      responses:
+        '200':
+          description: Created item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemDto'
+        '400':
+          description: Invalid input
+
+  /items/{id}:
+    get:
+      summary: Get item by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemDto'
+        '404':
+          description: Item not found
+    delete:
+      summary: Delete item by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Item deleted
+        '404':
+          description: Item not found
+
+  /items/batch:
+    post:
+      summary: Batch import items via CSV/GZIP
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Import result
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Imported 50 items"
+
+components:
+  schemas:
+    ItemDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        categoryId:
+          type: string
+        isSafe:
+          type: boolean
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagDto'
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationDto'
+        props:
+          type: object
+          additionalProperties:
+            type: string
+
+    TagDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    LocationDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        clientType:
+          type: string
+
+    CategoryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
